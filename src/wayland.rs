@@ -22,7 +22,7 @@ use smithay_client_toolkit::{
     seat::{
         Capability, SeatHandler, SeatState,
         keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers},
-        pointer::{PointerEvent, PointerEventKind, PointerHandler},
+        pointer::{AxisScroll, PointerEvent, PointerEventKind, PointerHandler},
     },
     shell::{
         WaylandSurface,
@@ -113,7 +113,16 @@ struct App {
     failure: Option<anyhow::Error>,
 }
 
-pub fn run(input: String, options: Options) -> Result<()> {
+/// Installed before the cursor is hidden, so a signal at any point still runs the cursor guard.
+pub fn termination_flag() -> Result<Arc<AtomicBool>> {
+    let terminated = Arc::new(AtomicBool::new(false));
+    for signal in [SIGINT, SIGTERM, SIGHUP, SIGQUIT] {
+        flag::register(signal, Arc::clone(&terminated)).context("installing signal handler")?;
+    }
+    Ok(terminated)
+}
+
+pub fn run(input: String, options: Options, terminated: Arc<AtomicBool>) -> Result<()> {
     let connection = Connection::connect_to_env().context("connecting to Wayland")?;
     let (globals, event_queue) =
         registry_queue_init(&connection).context("reading Wayland globals")?;
@@ -127,10 +136,6 @@ pub fn run(input: String, options: Options) -> Result<()> {
     let layer_shell = LayerShell::bind(&globals, &qh).context("wlr-layer-shell unavailable")?;
     let shm = Shm::bind(&globals, &qh).context("wl_shm unavailable")?;
     let pool = SlotPool::new(4, &shm).context("creating shared-memory pool")?;
-    let terminated = Arc::new(AtomicBool::new(false));
-    for signal in [SIGINT, SIGTERM, SIGHUP, SIGQUIT] {
-        flag::register(signal, Arc::clone(&terminated)).context("installing signal handler")?;
-    }
     let now = Instant::now();
     let mut app = App {
         registry_state: RegistryState::new(&globals),
@@ -375,7 +380,9 @@ impl App {
             }
         }
         if committed {
-            self.next_present = now + Duration::from_secs_f64(1.0 / PRESENT_RATE as f64);
+            // --frame-rate also caps presentation, so a lower rate eases the GPU during fades too.
+            let rate = PRESENT_RATE.min(self.options.frame_rate.max(1) as u32);
+            self.next_present = now + Duration::from_secs_f64(1.0 / rate as f64);
         }
     }
 }
@@ -788,11 +795,21 @@ impl PointerHandler for App {
                     self.last_pointer = Some(event.position);
                 }
                 PointerEventKind::Press { .. } => self.request_dismiss(),
+                PointerEventKind::Axis {
+                    horizontal,
+                    vertical,
+                    ..
+                } if scrolled(&horizontal) || scrolled(&vertical) => self.request_dismiss(),
                 PointerEventKind::Leave { .. } => self.last_pointer = None,
                 PointerEventKind::Release { .. } | PointerEventKind::Axis { .. } => {}
             }
         }
     }
+}
+
+// A scroll's closing stop event carries no distance, so only a real scroll counts as input.
+fn scrolled(axis: &AxisScroll) -> bool {
+    axis.absolute != 0.0 || axis.discrete != 0 || axis.value120 != 0
 }
 
 impl ShmHandler for App {
@@ -812,7 +829,24 @@ smithay_client_toolkit::delegate_dispatch2!(App);
 
 #[cfg(test)]
 mod tests {
-    use super::KeyboardTransition;
+    use super::{AxisScroll, KeyboardTransition, scrolled};
+
+    #[test]
+    fn only_a_scroll_with_distance_is_user_activity() {
+        let stop = AxisScroll {
+            stop: true,
+            ..AxisScroll::default()
+        };
+        assert!(!scrolled(&stop));
+        assert!(scrolled(&AxisScroll {
+            value120: 120,
+            ..AxisScroll::default()
+        }));
+        assert!(scrolled(&AxisScroll {
+            absolute: 4.5,
+            ..AxisScroll::default()
+        }));
+    }
 
     #[test]
     fn output_focus_transfer_is_not_user_activity() {
