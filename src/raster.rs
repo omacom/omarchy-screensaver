@@ -74,14 +74,12 @@ impl Rasterizer {
         cells: &[Cell],
         cols: i32,
         rows: i32,
-        opacity: f32,
         scale: i32,
     ) -> Result<()> {
         validate_target(pixels, width, height, cells, cols, rows)?;
-        let alpha = (opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
-        fill_rect(pixels, width, height, 0, 0, width, height, [0; 3], alpha);
+        fill_rect(pixels, width, height, 0, 0, width, height, [0; 3], 255);
         self.draw_region(
-            pixels, width, height, cells, cols, rows, alpha, scale, 0, cols, 0, rows,
+            pixels, width, height, cells, cols, rows, 255, scale, 0, cols, 0, rows,
         );
         Ok(())
     }

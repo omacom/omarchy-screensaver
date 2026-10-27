@@ -107,7 +107,6 @@ fn main() {
             animation.cells(),
             cols,
             rows,
-            1.0,
             SCALE,
         )
         .expect("render full-frame oracle");
@@ -159,7 +158,7 @@ fn advance_and_render(
                 .expect("raster frame");
         } else {
             rasterizer
-                .render(pixels, width, height, current, cols, rows, 1.0, SCALE)
+                .render(pixels, width, height, current, cols, rows, SCALE)
                 .expect("raster frame");
             previous_cells.resize(current.len(), Default::default());
         }

@@ -12,7 +12,7 @@ The application advances ttfx at a fixed 120 Hz and makes the newest changed fra
 
 Presentation has three independent gates:
 
-- content or fade opacity actually changed;
+- content actually changed;
 - the 120 Hz deadline passed;
 - the compositor sent the previous `wl_surface.frame` callback and released the SHM slot.
 
@@ -28,8 +28,8 @@ The largest configured output determines the shared ttfx cell grid. Every output
 
 The animation owns one mutable cell vector. The VT parser fills it in place. Each output owns one persistent SHM buffer and one last-presented cell snapshot. The snapshot costs roughly 96 KiB at the benchmark's 182×45 grid but avoids rewriting a 56.25 MiB 5K buffer when only a small cell region changed. The rasterizer owns a glyph bitmap cache keyed by character and scale; no frame-sized image copy sits between stages.
 
-A stable change bit from the VT parser rejects completely unchanged engine output without a second full-grid hash. Catch-up simulation retains only the newest VT frame and defers parsing until a surface is ready to present. Alpha is compared after conversion to the actual 8-bit surface value. The overlay appears opaque with its first frame already drawn; during the dismissal fade, alpha changes require a full redraw. Once opaque, clipped cell glyphs make incremental redraw byte-identical to a full-frame oracle, and a full-surface Wayland opaque region lets the compositor skip blending the desktop underneath. Rasterization occurs only when a surface can immediately attach and commit its buffer.
+A stable change bit from the VT parser rejects completely unchanged engine output without a second full-grid hash. Catch-up simulation retains only the newest VT frame and defers parsing until a surface is ready to present. The overlay appears opaque with its first frame already drawn, and clipped cell glyphs make incremental redraw byte-identical to a full-frame oracle, and a full-surface Wayland opaque region lets the compositor skip blending the desktop underneath. Rasterization occurs only when a surface can immediately attach and commit its buffer.
 
 ## Signals are part of dismissal
 
-SIGINT, SIGTERM, SIGHUP, and SIGQUIT set an atomic dismissal flag. The normal event loop performs the configured fade-out, drops Wayland resources, and restores Hyprland cursor visibility. An abrupt default signal handler would bypass the cursor guard.
+SIGINT, SIGTERM, SIGHUP, and SIGQUIT set an atomic dismissal flag. The normal event loop then exits at once, drops Wayland resources, and restores Hyprland cursor visibility. An abrupt default signal handler would bypass the cursor guard.
