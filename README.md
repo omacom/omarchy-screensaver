@@ -39,7 +39,7 @@ make benchmark                        # render benchmark, checked byte-for-byte 
 make install PREFIX="$HOME/.local"    # as $PREFIX/bin/omarchy-launch-screensaver, outside Omarchy's package
 ```
 
-To release, bump the version in `Cargo.toml`, tag it `v<version>`, and publish a GitHub release for the tag: omarchy-pkgs picks up new releases and builds the package from source. [LEARNINGS.md](LEARNINGS.md) explains how rendering and presentation work.
+To release, bump the version in `Cargo.toml`, run `cargo update -p omarchy-launch-screensaver` so `Cargo.lock` agrees, commit both, tag `v<version>`, and publish a GitHub release for the tag that is neither a draft nor a prerelease. omarchy-pkgs picks up new releases and builds the package from source. [LEARNINGS.md](LEARNINGS.md) explains how rendering and presentation work.
 
 ## Credits
 
