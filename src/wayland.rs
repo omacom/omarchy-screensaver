@@ -330,12 +330,11 @@ impl App {
         match &mut self.animation {
             Some(animation) => animation.resize(cols, rows)?,
             None => {
-                self.animation = Some(Animation::new(
-                    self.input.clone(),
-                    self.options.clone(),
-                    cols,
-                    rows,
-                )?);
+                let mut animation =
+                    Animation::new(self.input.clone(), self.options.clone(), cols, rows)?;
+                // The overlay is opaque from its first commit, so that commit needs the first frame on it.
+                animation.advance()?;
+                self.animation = Some(animation);
             }
         }
         Ok(())
