@@ -9,7 +9,7 @@ The binary keeps Omarchy's public contract:
 - input: `~/.config/omarchy/branding/screensaver.txt`, then the bundled asset
 - toggle: `~/.local/state/omarchy/toggles/screensaver-off`
 - one exclusive overlay on every output
-- keyboard, pointer motion, click, signal, or surface close dismisses the overlay
+- keyboard, pointer motion, click, scroll, signal, or surface close dismisses the overlay
 - ttfx simulation and Wayland presentation are both capped at 120 Hz
 
 ## Architecture

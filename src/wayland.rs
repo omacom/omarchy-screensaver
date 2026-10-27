@@ -22,7 +22,7 @@ use smithay_client_toolkit::{
     seat::{
         Capability, SeatHandler, SeatState,
         keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers},
-        pointer::{PointerEvent, PointerEventKind, PointerHandler},
+        pointer::{AxisScroll, PointerEvent, PointerEventKind, PointerHandler},
     },
     shell::{
         WaylandSurface,
@@ -788,11 +788,21 @@ impl PointerHandler for App {
                     self.last_pointer = Some(event.position);
                 }
                 PointerEventKind::Press { .. } => self.request_dismiss(),
+                PointerEventKind::Axis {
+                    horizontal,
+                    vertical,
+                    ..
+                } if scrolled(&horizontal) || scrolled(&vertical) => self.request_dismiss(),
                 PointerEventKind::Leave { .. } => self.last_pointer = None,
                 PointerEventKind::Release { .. } | PointerEventKind::Axis { .. } => {}
             }
         }
     }
+}
+
+// A scroll's closing stop event carries no distance, so only a real scroll counts as input.
+fn scrolled(axis: &AxisScroll) -> bool {
+    axis.absolute != 0.0 || axis.discrete != 0 || axis.value120 != 0
 }
 
 impl ShmHandler for App {
@@ -812,7 +822,24 @@ smithay_client_toolkit::delegate_dispatch2!(App);
 
 #[cfg(test)]
 mod tests {
-    use super::KeyboardTransition;
+    use super::{AxisScroll, KeyboardTransition, scrolled};
+
+    #[test]
+    fn only_a_scroll_with_distance_is_user_activity() {
+        let stop = AxisScroll {
+            stop: true,
+            ..AxisScroll::default()
+        };
+        assert!(!scrolled(&stop));
+        assert!(scrolled(&AxisScroll {
+            value120: 120,
+            ..AxisScroll::default()
+        }));
+        assert!(scrolled(&AxisScroll {
+            absolute: 4.5,
+            ..AxisScroll::default()
+        }));
+    }
 
     #[test]
     fn output_focus_transfer_is_not_user_activity() {
