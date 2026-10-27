@@ -22,7 +22,6 @@ omarchy-launch-screensaver [force] [options]
 - `--input PATH`: draw this file instead of the branding text
 - `--effect NAME`: pin one effect instead of picking at random; the names are ttfx's effects (`ttfx --help`)
 - `--include-effects LIST`, `--exclude-effects LIST`: narrow the random pick
-- `--frame-rate N`: animation rate, default 120; it also caps redraws, at most 120 Hz. Lower it on a GPU that struggles (Omarchy passes `OMARCHY_SCREENSAVER_FRAME_RATE` here)
 - `--fade IN[,OUT]`: fade durations in milliseconds, default `1000,200`
 - `--seed N`: repeat the same effect and animation
 - `--headless --frames N --cols N --rows N`: render without a display, for tests

@@ -11,7 +11,6 @@ pub struct Options {
     pub cols: i32,
     pub rows: i32,
     pub frames: usize,
-    pub frame_rate: i32,
     pub fade_ms: u64,
     pub fade_out_ms: u64,
     pub canvas_width: i32,
@@ -36,7 +35,6 @@ impl Default for Options {
             cols: 0,
             rows: 0,
             frames: 30,
-            frame_rate: 120,
             fade_ms: 1000,
             fade_out_ms: 200,
             canvas_width: 0,
@@ -92,7 +90,6 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Option<Options>>
             "-R" | "--random-effect" | "--random" => out.effect = None,
             "--include-effects" => out.include_effects = split_list(&take("--include-effects")?),
             "--exclude-effects" => out.exclude_effects = split_list(&take("--exclude-effects")?),
-            "--frame-rate" => out.frame_rate = int("--frame-rate", take("--frame-rate")?)?,
             "--fade" => {
                 let value = take("--fade")?;
                 let mut parts = value.split([',', ':']);
@@ -131,9 +128,6 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Option<Options>>
             _ => bail!("unknown arg {raw}"),
         }
         i += 1;
-    }
-    if out.frame_rate <= 0 {
-        out.frame_rate = 120;
     }
     Ok(Some(out))
 }
@@ -193,7 +187,6 @@ Frames are committed only after content invalidation and compositor readiness.
   -R, --random-effect     pick a random effect (default)
   --include-effects LIST  limit random pick (comma-separated)
   --exclude-effects LIST  skip these when random
-  --frame-rate N          ttfx simulation rate (default 120)
   --fade N[,OUT]          appear ms (default 1000), dismiss ms (default 200)
   --canvas-width N        0 = output width
   --canvas-height N       0 = output height
