@@ -375,7 +375,9 @@ impl App {
             }
         }
         if committed {
-            self.next_present = now + Duration::from_secs_f64(1.0 / PRESENT_RATE as f64);
+            // --frame-rate also caps presentation, so a lower rate eases the GPU during fades too.
+            let rate = PRESENT_RATE.min(self.options.frame_rate.max(1) as u32);
+            self.next_present = now + Duration::from_secs_f64(1.0 / rate as f64);
         }
     }
 }

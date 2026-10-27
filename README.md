@@ -79,7 +79,7 @@ Important options:
 - `force`, `--force`: ignore the screensaver-off toggle and lock-state guard
 - `--effect NAME`: pin an effect; omission picks randomly
 - `--include-effects LIST`, `--exclude-effects LIST`: filter random selection
-- `--frame-rate N`: ttfx simulation rate; default 120
+- `--frame-rate N`: ttfx simulation rate, which also caps presentation below 120 Hz; default 120
 - `--fade IN[,OUT]`: fade durations in milliseconds; defaults 1000 and 200
 - `--seed N`: deterministic effect selection and animation
 - `--headless --frames N --cols N --rows N`: deterministic non-Wayland contract mode
