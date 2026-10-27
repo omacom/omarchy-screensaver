@@ -565,12 +565,13 @@ dependencies = [
 
 [[package]]
 name = "ttfx"
-version = "0.3.1"
-source = "git+https://github.com/omacom-io/ttfx#6e24dac78e3011d89bd7ff24d1ad91dd89e11d8a"
+version = "0.5.1"
+source = "git+https://github.com/omacom/ttfx?tag=v0.5.1#14ed2742596f0056b13e25d14a83ea851adc2294"
 dependencies = [
  "clap",
  "clap_complete",
  "terminal_size",
+ "unicode-width",
 ]
 
 [[package]]
@@ -578,6 +579,12 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unicode-width"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
 
 [[package]]
 name = "utf8parse"

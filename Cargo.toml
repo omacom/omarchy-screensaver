@@ -11,7 +11,7 @@ fontdue = "0.9"
 fs2 = "0.4"
 signal-hook = "0.3"
 smithay-client-toolkit = "0.21.1"
-ttfx = { git = "https://github.com/omacom-io/ttfx" }
+ttfx = { git = "https://github.com/omacom/ttfx", tag = "v0.5.1" }
 wayland-client = "0.31"
 [[bench]]
 name = "render"
