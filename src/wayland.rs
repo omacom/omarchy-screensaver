@@ -501,6 +501,7 @@ impl CompositorHandler for App {
             output.scale = factor.max(1);
             output.layer.wl_surface().set_buffer_scale(output.scale);
             output.buffer = None;
+            output.rendered_cells.clear();
             output.dirty = true;
         }
         if let Err(error) = self.ensure_animation() {
