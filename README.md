@@ -1,120 +1,48 @@
-# omarchy-launch-screensaver
+# omarchy-screensaver
 
-Native Rust/Wayland screensaver for [Omarchy](https://omarchy.org). One executable replaces the terminal-based `omarchy-launch-screensaver` loop without opening Alacritty, Ghostty, Foot, or Kitty.
+The [Omarchy](https://omarchy.org) screensaver: a native Wayland overlay on every display that animates your branding text with [ttfx](https://github.com/omacom/ttfx) effects. A key press, click, scroll or mouse movement dismisses it.
 
-The binary keeps Omarchy's public contract:
+## In Omarchy
 
-- command: `omarchy-launch-screensaver [force] [options]`
-- layer namespace: `org.omarchy.screensaver`
-- input: `~/.config/omarchy/branding/screensaver.txt`, then the bundled asset
-- toggle: `~/.local/state/omarchy/toggles/screensaver-off`
-- one exclusive overlay on every output
-- keyboard, pointer motion, click, scroll, signal, or surface close dismisses the overlay
-- ttfx simulation and Wayland presentation are both capped at 120 Hz
+Omarchy installs it as the `omarchy-screensaver` package, at `/usr/lib/omarchy-screensaver/omarchy-screensaver`, and starts it through `omarchy-launch-screensaver`, both when the session goes idle and from _System > Screensaver_. It:
 
-## Architecture
+- draws the text in `~/.config/omarchy/branding/screensaver.txt`, falling back to the bundled `assets/screensaver.txt`
+- stays off while the `screensaver-off` toggle is set (`omarchy toggle screensaver`), or while the session is locked
+- runs one instance at a time, and on Hyprland hides the cursor while it is up and restores it when it exits
+- fades out and exits on input, `SIGTERM`, `SIGINT`, `SIGHUP` or `SIGQUIT`
 
-```text
-branding text
-    │
-    ▼
-ttfx Effect + EngineCtx (Rust, in process, 120 Hz)
-    │ complete VT frame
-    ▼
-fixed-width VT parser → caller-owned Cell grid
-    │
-    ▼
-fontdue glyph cache + ARGB8888 software rasterizer
-    │ only when cells, fade, scale, or geometry change
-    ▼
-smithay-client-toolkit → wl_shm buffer → wlr-layer-shell surface per output
-```
-
-There is no Qt, C++, C ABI, terminal emulator, terminal child, generated Wayland C code, or shell wrapper. `ttfx` is linked as a Rust crate and driven through `Effect::next_frame`. The small VT parser handles only the complete-frame cursor and true-color sequences ttfx emits; it is not a general terminal emulator.
-
-Rendering is invalidation-driven:
-
-1. ttfx advances at its requested simulation rate.
-2. The VT parser reports whether the caller-owned cell grid actually changed.
-3. Fade opacity is quantized to the output alpha byte.
-4. Dirty surfaces are eligible at 120 Hz.
-5. A `wl_surface.frame` callback must release presentation pacing.
-6. `SlotPool::canvas` must confirm the persistent SHM buffer is no longer owned by the compositor.
-7. During fades, the full buffer is redrawn because every pixel's alpha changed.
-8. Once opaque, the current cells are compared with each output's last-presented snapshot; only the exact changed-cell bounding box is cleared, redrawn, damaged, attached, and committed.
-9. Fully opaque surfaces publish a matching Wayland opaque region so the compositor can skip blending the desktop underneath.
-
-Each output has one reusable SHM buffer and one small cell snapshot for incremental damage. HiDPI outputs render at their compositor scale. Glyph bitmaps are cached by `(character, scale)` and clipped to terminal-cell bounds, making partial and full rasterization byte-identical.
-
-## Build and install
-
-Requirements: Rust/Cargo and a Wayland compositor implementing `wlr-layer-shell` (Hyprland does).
+## Options
 
 ```bash
-make
-make check
-make install PREFIX="$HOME/.local"
+omarchy-launch-screensaver [force] [options]
 ```
 
-Equivalent Cargo command:
+- `force`: start even when the toggle is set or the session is locked
+- `--input PATH`: draw this file instead of the branding text
+- `--effect NAME`: pin one effect instead of picking at random; the names are ttfx's effects (`ttfx --help`)
+- `--include-effects LIST`, `--exclude-effects LIST`: narrow the random pick
+- `--frame-rate N`: animation rate, default 120; it also caps redraws, at most 120 Hz. Lower it on a GPU that struggles (Omarchy passes `OMARCHY_SCREENSAVER_FRAME_RATE` here)
+- `--fade IN[,OUT]`: fade durations in milliseconds, default `1000,200`
+- `--seed N`: repeat the same effect and animation
+- `--headless --frames N --cols N --rows N`: render without a display, for tests
+
+`--help` lists the rest.
+
+## Build and test
+
+Building needs Rust, `pkg-config` and libxkbcommon. Running it needs a compositor with `wlr-layer-shell`, such as Hyprland, and a monospace font: JetBrains Mono Nerd Font, or the closest monospace font `fc-match` finds.
 
 ```bash
-CARGO_TARGET_DIR=build/rust cargo build --release
+make                                  # build/rust/release/omarchy-launch-screensaver
+make check                            # the test suite; needs no compositor
+make benchmark                        # render benchmark, checked byte-for-byte against a full redraw
+make install PREFIX="$HOME/.local"    # as $PREFIX/bin/omarchy-launch-screensaver, outside Omarchy's package
 ```
 
-The executable lands at `build/rust/release/omarchy-launch-screensaver`.
-
-Tagged releases publish Linux archives for `x86_64` and `aarch64`, plus SHA-256 checksum files.
-
-## Run
-
-```bash
-omarchy-launch-screensaver force
-omarchy-launch-screensaver force --effect print --seed 1
-omarchy-launch-screensaver --headless --frames 30 --effect decrypt --cols 80 --rows 24
-```
-
-Important options:
-
-- `force`, `--force`: ignore the screensaver-off toggle and lock-state guard
-- `--effect NAME`: pin an effect; omission picks randomly
-- `--include-effects LIST`, `--exclude-effects LIST`: filter random selection
-- `--frame-rate N`: ttfx simulation rate, which also caps presentation below 120 Hz; default 120
-- `--fade IN[,OUT]`: fade durations in milliseconds; defaults 1000 and 200
-- `--seed N`: deterministic effect selection and animation
-- `--headless --frames N --cols N --rows N`: deterministic non-Wayland contract mode
-
-Run `omarchy-launch-screensaver --help` for the full list.
-
-## Deterministic benchmark
-
-```bash
-make benchmark
-```
-
-The benchmark runs 480 seeded `decrypt` simulation steps and 120 presentation frames against a persistent 5120×2880 ARGB buffer. It warms the font/glyph caches, counts allocator traffic, verifies incremental output byte-for-byte against a full-frame oracle, and emits an FNV-1a checksum.
-
-Measured on the workstation described by the repository session:
-
-| renderer | total | per frame | throughput | checksum |
-|---|---:|---:|---:|---|
-| full-buffer baseline | 379.1 ms | 3.159 ms | 316.5 fps | `12301096be43a75d` |
-| incremental damage | 22.7 ms | 0.189 ms | 5,278.3 fps | `2e1bd28d1bcdb090` |
-
-The checksum changed when glyph output was deliberately clipped to terminal-cell bounds; the benchmark's full-frame oracle has the same new checksum. The measured loop performs 2,749 allocations totaling 14,371,148 bytes across 480 ttfx steps; those counts are deterministic and unchanged by the damage optimization. Wall-clock numbers vary with machine load.
-
-## Tests
-
-```bash
-CARGO_TARGET_DIR=build/rust cargo test --all-targets
-```
-
-The suite checks CLI compatibility, deterministic seeded rendering, non-empty cell output, and operation with closed standard streams. The headless summary includes `backend=rust`; no compositor is needed.
+Pushing a `v*` tag that matches the version in `Cargo.toml` publishes `x86_64` and `aarch64` release archives with SHA-256 checksums. [LEARNINGS.md](LEARNINGS.md) explains how rendering and presentation work.
 
 ## Credits
 
-- [ttfx](https://github.com/omacom/ttfx) — Rust port of TerminalTextEffects
-- [Smithay Client Toolkit](https://github.com/Smithay/client-toolkit) — Wayland client primitives
-- [fontdue](https://github.com/mooman219/fontdue) — software glyph rasterization
+Written by [Tobi Lütke](https://github.com/tobi). Built on [ttfx](https://github.com/omacom/ttfx), [Smithay Client Toolkit](https://github.com/Smithay/client-toolkit) and [fontdue](https://github.com/mooman219/fontdue).
 
 MIT; see [LICENSE](LICENSE).
