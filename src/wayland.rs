@@ -102,7 +102,6 @@ struct App {
     animation: Option<Animation>,
     input: String,
     options: Options,
-    started: Instant,
     dismissing: Option<(Instant, f32)>,
     next_engine_tick: Instant,
     next_present: Instant,
@@ -152,7 +151,6 @@ pub fn run(input: String, options: Options, terminated: Arc<AtomicBool>) -> Resu
         animation: None,
         input,
         options,
-        started: now,
         dismissing: None,
         next_engine_tick: now,
         next_present: now,
@@ -238,8 +236,7 @@ impl App {
             let elapsed = now.saturating_duration_since(at).as_millis() as f32;
             return from * (1.0 - elapsed / self.options.fade_out_ms as f32).clamp(0.0, 1.0);
         }
-        let elapsed = now.saturating_duration_since(self.started).as_millis() as f32;
-        (elapsed / self.options.fade_ms as f32).clamp(0.0, 1.0)
+        1.0
     }
 
     fn tick(&mut self, qh: &QueueHandle<Self>) {

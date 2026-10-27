@@ -22,7 +22,7 @@ omarchy-launch-screensaver [force] [options]
 - `--input PATH`: draw this file instead of the branding text
 - `--effect NAME`: pin one effect instead of picking at random; the names are ttfx's effects (`ttfx --help`)
 - `--include-effects LIST`, `--exclude-effects LIST`: narrow the random pick
-- `--fade IN[,OUT]`: fade durations in milliseconds, default `1000,200`
+- `--fade N`: how long it fades out when dismissed, in milliseconds, default 200; it appears at once
 - `--seed N`: repeat the same effect and animation
 - `--headless --frames N --cols N --rows N`: render without a display, for tests
 
