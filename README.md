@@ -113,7 +113,7 @@ The suite checks CLI compatibility, deterministic seeded rendering, non-empty ce
 
 ## Credits
 
-- [ttfx](https://github.com/omacom-io/ttfx) — Rust port of TerminalTextEffects
+- [ttfx](https://github.com/omacom/ttfx) — Rust port of TerminalTextEffects
 - [Smithay Client Toolkit](https://github.com/Smithay/client-toolkit) — Wayland client primitives
 - [fontdue](https://github.com/mooman219/fontdue) — software glyph rasterization
 
