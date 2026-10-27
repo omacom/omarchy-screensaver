@@ -197,9 +197,12 @@ fn pick_effect(
     Ok((name, command))
 }
 
+/// ttfx steps and the overlay redraws at this rate.
+pub const FRAME_RATE: u32 = 120;
+
 fn terminal_config(options: &Options, cols: i32, rows: i32) -> TerminalConfig {
     TerminalConfig {
-        frame_rate: i64::from(options.frame_rate.max(1)),
+        frame_rate: i64::from(FRAME_RATE),
         canvas_width: i64::from(if options.canvas_width > 0 {
             options.canvas_width
         } else {

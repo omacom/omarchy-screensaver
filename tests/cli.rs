@@ -10,7 +10,6 @@ fn help_describes_native_rust_contract() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Rust + Wayland + ttfx"));
-    assert!(stdout.contains("--frame-rate N          ttfx simulation rate (default 120)"));
     assert!(stdout.contains("No terminal, Qt, C++, or ttfx child"));
 }
 

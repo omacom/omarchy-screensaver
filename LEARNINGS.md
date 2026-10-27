@@ -8,7 +8,7 @@ The remaining VT parser is intentionally narrow: cursor positioning, erase, line
 
 ## Separate simulation from presentation
 
-`--frame-rate` is the engine clock, while presentation is capped independently. The application advances ttfx at 120 Hz by default and makes the newest changed frame eligible for presentation at up to 120 Hz.
+The application advances ttfx at a fixed 120 Hz and makes the newest changed frame eligible for presentation at up to 120 Hz.
 
 Presentation has three independent gates:
 

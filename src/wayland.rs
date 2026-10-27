@@ -43,13 +43,12 @@ use wayland_client::{
 };
 
 use crate::{
-    engine::Animation,
+    engine::{Animation, FRAME_RATE},
     options::Options,
     raster::{Damage, Rasterizer},
     vt::Cell,
 };
 
-const PRESENT_RATE: u32 = 120;
 const NAMESPACE: &str = "org.omarchy.screensaver";
 
 #[derive(Clone, Copy)]
@@ -257,7 +256,7 @@ impl App {
             self.exit = true;
             return;
         }
-        let frame_duration = Duration::from_secs_f64(1.0 / self.options.frame_rate.max(1) as f64);
+        let frame_duration = Duration::from_secs_f64(1.0 / FRAME_RATE as f64);
         let mut catchup = 0;
         while now >= self.next_engine_tick && catchup < 8 {
             if let Some(animation) = &mut self.animation
@@ -380,9 +379,7 @@ impl App {
             }
         }
         if committed {
-            // --frame-rate also caps presentation, so a lower rate eases the GPU during fades too.
-            let rate = PRESENT_RATE.min(self.options.frame_rate.max(1) as u32);
-            self.next_present = now + Duration::from_secs_f64(1.0 / rate as f64);
+            self.next_present = now + Duration::from_secs_f64(1.0 / FRAME_RATE as f64);
         }
     }
 }
