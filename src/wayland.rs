@@ -113,7 +113,16 @@ struct App {
     failure: Option<anyhow::Error>,
 }
 
-pub fn run(input: String, options: Options) -> Result<()> {
+/// Installed before the cursor is hidden, so a signal at any point still runs the cursor guard.
+pub fn termination_flag() -> Result<Arc<AtomicBool>> {
+    let terminated = Arc::new(AtomicBool::new(false));
+    for signal in [SIGINT, SIGTERM, SIGHUP, SIGQUIT] {
+        flag::register(signal, Arc::clone(&terminated)).context("installing signal handler")?;
+    }
+    Ok(terminated)
+}
+
+pub fn run(input: String, options: Options, terminated: Arc<AtomicBool>) -> Result<()> {
     let connection = Connection::connect_to_env().context("connecting to Wayland")?;
     let (globals, event_queue) =
         registry_queue_init(&connection).context("reading Wayland globals")?;
@@ -127,10 +136,6 @@ pub fn run(input: String, options: Options) -> Result<()> {
     let layer_shell = LayerShell::bind(&globals, &qh).context("wlr-layer-shell unavailable")?;
     let shm = Shm::bind(&globals, &qh).context("wl_shm unavailable")?;
     let pool = SlotPool::new(4, &shm).context("creating shared-memory pool")?;
-    let terminated = Arc::new(AtomicBool::new(false));
-    for signal in [SIGINT, SIGTERM, SIGHUP, SIGQUIT] {
-        flag::register(signal, Arc::clone(&terminated)).context("installing signal handler")?;
-    }
     let now = Instant::now();
     let mut app = App {
         registry_state: RegistryState::new(&globals),
