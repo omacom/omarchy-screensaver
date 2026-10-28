@@ -190,6 +190,22 @@ impl Rasterizer {
                 if cell.ch == ' ' || cell.ch == '\0' {
                     continue;
                 }
+                if let Some(block) = block_element(cell.ch) {
+                    draw_block(
+                        pixels,
+                        width,
+                        height,
+                        x,
+                        y,
+                        cell_width,
+                        cell_height,
+                        block,
+                        cell.fg,
+                        cell.bg,
+                        alpha,
+                    );
+                    continue;
+                }
                 let key = (cell.ch, scale);
                 let font = &self.font;
                 let glyph = self.glyphs.entry(key).or_insert_with(|| {
@@ -264,6 +280,104 @@ fn validate_target(
         return Err(anyhow!("raster target is smaller than the frame"));
     }
     Ok(())
+}
+
+/// A block element, drawn as exact fractions of the cell the way terminals draw them: the font's
+/// glyphs stop short of the line gap and leave a seam between rows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Block {
+    /// Rectangles as (left, top, right, bottom) in eighths of the cell.
+    Rects(&'static [[i32; 4]]),
+    /// The whole cell, with this many quarters of the foreground over the background.
+    Shade(u16),
+}
+
+fn block_element(ch: char) -> Option<Block> {
+    const UL: [i32; 4] = [0, 0, 4, 4];
+    const UR: [i32; 4] = [4, 0, 8, 4];
+    const LL: [i32; 4] = [0, 4, 4, 8];
+    const LR: [i32; 4] = [4, 4, 8, 8];
+    let rects: &'static [[i32; 4]] = match ch {
+        '▀' => &[[0, 0, 8, 4]],
+        '▁' => &[[0, 7, 8, 8]],
+        '▂' => &[[0, 6, 8, 8]],
+        '▃' => &[[0, 5, 8, 8]],
+        '▄' => &[[0, 4, 8, 8]],
+        '▅' => &[[0, 3, 8, 8]],
+        '▆' => &[[0, 2, 8, 8]],
+        '▇' => &[[0, 1, 8, 8]],
+        '█' => &[[0, 0, 8, 8]],
+        '▉' => &[[0, 0, 7, 8]],
+        '▊' => &[[0, 0, 6, 8]],
+        '▋' => &[[0, 0, 5, 8]],
+        '▌' => &[[0, 0, 4, 8]],
+        '▍' => &[[0, 0, 3, 8]],
+        '▎' => &[[0, 0, 2, 8]],
+        '▏' => &[[0, 0, 1, 8]],
+        '▐' => &[[4, 0, 8, 8]],
+        '░' => return Some(Block::Shade(1)),
+        '▒' => return Some(Block::Shade(2)),
+        '▓' => return Some(Block::Shade(3)),
+        '▔' => &[[0, 0, 8, 1]],
+        '▕' => &[[7, 0, 8, 8]],
+        '▖' => &[LL],
+        '▗' => &[LR],
+        '▘' => &[UL],
+        '▙' => &[UL, LL, LR],
+        '▚' => &[UL, LR],
+        '▛' => &[UL, UR, LL],
+        '▜' => &[UL, UR, LR],
+        '▝' => &[UR],
+        '▞' => &[UR, LL],
+        '▟' => &[UR, LL, LR],
+        _ => return None,
+    };
+    Some(Block::Rects(rects))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_block(
+    pixels: &mut [u8],
+    width: i32,
+    height: i32,
+    x: i32,
+    y: i32,
+    cell_width: i32,
+    cell_height: i32,
+    block: Block,
+    fg: [u8; 3],
+    bg: [u8; 3],
+    alpha: u8,
+) {
+    match block {
+        Block::Rects(rects) => {
+            for [left, top, right, bottom] in rects {
+                // Edges snap to the same pixels in neighbouring cells, so blocks meet without a seam.
+                let x0 = x + cell_width * left / 8;
+                let y0 = y + cell_height * top / 8;
+                let x1 = x + cell_width * right / 8;
+                let y1 = y + cell_height * bottom / 8;
+                fill_rect(pixels, width, height, x0, y0, x1 - x0, y1 - y0, fg, alpha);
+            }
+        }
+        Block::Shade(quarters) => {
+            let mix = |f: u8, b: u8| {
+                ((u16::from(f) * quarters + u16::from(b) * (4 - quarters)) / 4) as u8
+            };
+            let rgb = [mix(fg[0], bg[0]), mix(fg[1], bg[1]), mix(fg[2], bg[2])];
+            fill_rect(
+                pixels,
+                width,
+                height,
+                x,
+                y,
+                cell_width,
+                cell_height,
+                rgb,
+                alpha,
+            );
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -366,4 +480,73 @@ fn draw_glyph(
 
 fn multiply(color: u8, alpha: u8) -> u8 {
     (u16::from(color) * u16::from(alpha) / 255) as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stacked_full_blocks_leave_no_seam() {
+        let Ok(mut rasterizer) = Rasterizer::load() else {
+            eprintln!("no monospace font; skipping");
+            return;
+        };
+        let fg = [200, 100, 50];
+        let cell = Cell {
+            ch: '█',
+            fg,
+            bg: [0; 3],
+        };
+        let (width, height) = (rasterizer.cell_width, rasterizer.cell_height * 2);
+        let mut pixels = vec![0u8; (width * height * 4) as usize];
+        rasterizer
+            .render(&mut pixels, width, height, &[cell, cell], 1, 2, 1)
+            .unwrap();
+        let expected = [fg[2], fg[1], fg[0], 255];
+        for (index, pixel) in pixels.as_chunks::<4>().0.iter().enumerate() {
+            assert_eq!(
+                *pixel, expected,
+                "pixel {index} of a 1x2 block column is not foreground"
+            );
+        }
+    }
+
+    #[test]
+    fn a_lower_half_meets_the_upper_half_below_it() {
+        let Ok(mut rasterizer) = Rasterizer::load() else {
+            eprintln!("no monospace font; skipping");
+            return;
+        };
+        let fg = [200, 100, 50];
+        let lower = Cell {
+            ch: '▄',
+            fg,
+            bg: [0; 3],
+        };
+        let upper = Cell {
+            ch: '▀',
+            fg,
+            bg: [0; 3],
+        };
+        let (width, cell_height) = (rasterizer.cell_width, rasterizer.cell_height);
+        let height = cell_height * 2;
+        let mut pixels = vec![0u8; (width * height * 4) as usize];
+        rasterizer
+            .render(&mut pixels, width, height, &[lower, upper], 1, 2, 1)
+            .unwrap();
+        let (band_top, band_bottom) = (cell_height * 4 / 8, cell_height + cell_height * 4 / 8);
+        for (index, pixel) in pixels.as_chunks::<4>().0.iter().enumerate() {
+            let row = index as i32 / width;
+            let expected = if (band_top..band_bottom).contains(&row) {
+                [fg[2], fg[1], fg[0], 255]
+            } else {
+                [0, 0, 0, 255]
+            };
+            assert_eq!(
+                *pixel, expected,
+                "row {row} of a lower half over an upper half"
+            );
+        }
+    }
 }
