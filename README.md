@@ -10,7 +10,7 @@ Omarchy installs it as the `omarchy-screensaver` package, at `/usr/lib/omarchy-s
 - stays off while the `screensaver-off` toggle is set (`omarchy toggle screensaver`), or while the session is locked
 - maps one layer surface per display under the namespace `org.omarchy.screensaver`, which is how Omarchy's tools find it
 - runs one instance at a time, and on Hyprland hides the cursor while it is up and restores it when it exits
-- fades out and exits on input, `SIGTERM`, `SIGINT`, `SIGHUP` or `SIGQUIT`
+- appears and disappears at once, exiting on input, `SIGTERM`, `SIGINT`, `SIGHUP` or `SIGQUIT`
 
 ## Options
 
@@ -22,7 +22,6 @@ omarchy-launch-screensaver [force] [options]
 - `--input PATH`: draw this file instead of the branding text
 - `--effect NAME`: pin one effect instead of picking at random; the names are ttfx's effects (`ttfx --help`)
 - `--include-effects LIST`, `--exclude-effects LIST`: narrow the random pick
-- `--fade IN[,OUT]`: fade durations in milliseconds, default `1000,200`
 - `--seed N`: repeat the same effect and animation
 - `--headless --frames N --cols N --rows N`: render without a display, for tests
 

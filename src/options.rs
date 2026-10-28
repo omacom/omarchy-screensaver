@@ -11,8 +11,6 @@ pub struct Options {
     pub cols: i32,
     pub rows: i32,
     pub frames: usize,
-    pub fade_ms: u64,
-    pub fade_out_ms: u64,
     pub canvas_width: i32,
     pub canvas_height: i32,
     pub reuse_canvas: bool,
@@ -35,8 +33,6 @@ impl Default for Options {
             cols: 0,
             rows: 0,
             frames: 30,
-            fade_ms: 1000,
-            fade_out_ms: 200,
             canvas_width: 0,
             canvas_height: 0,
             reuse_canvas: true,
@@ -90,17 +86,6 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Option<Options>>
             "-R" | "--random-effect" | "--random" => out.effect = None,
             "--include-effects" => out.include_effects = split_list(&take("--include-effects")?),
             "--exclude-effects" => out.exclude_effects = split_list(&take("--exclude-effects")?),
-            "--fade" => {
-                let value = take("--fade")?;
-                let mut parts = value.split([',', ':']);
-                out.fade_ms = positive("--fade", parts.next().unwrap_or_default())?;
-                if let Some(value) = parts.next() {
-                    out.fade_out_ms = positive("--fade OUT", value)?;
-                }
-                if parts.next().is_some() {
-                    bail!("--fade needs N or N,OUT");
-                }
-            }
             "--canvas-width" => out.canvas_width = int("--canvas-width", take("--canvas-width")?)?,
             "--canvas-height" => {
                 out.canvas_height = int("--canvas-height", take("--canvas-height")?)?
@@ -130,16 +115,6 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Option<Options>>
         i += 1;
     }
     Ok(Some(out))
-}
-
-fn positive(name: &str, value: &str) -> Result<u64> {
-    let parsed: u64 = value
-        .parse()
-        .with_context(|| format!("{name} expects a positive integer"))?;
-    if parsed == 0 {
-        bail!("{name} expects a positive integer");
-    }
-    Ok(parsed)
 }
 
 fn split_list(value: &str) -> Vec<String> {
@@ -187,7 +162,6 @@ Frames are committed only after content invalidation and compositor readiness.
   -R, --random-effect     pick a random effect (default)
   --include-effects LIST  limit random pick (comma-separated)
   --exclude-effects LIST  skip these when random
-  --fade N[,OUT]          appear ms (default 1000), dismiss ms (default 200)
   --canvas-width N        0 = output width
   --canvas-height N       0 = output height
   --reuse-canvas          keep canvas between frames (default on)
@@ -211,17 +185,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_force_effect_and_fade() {
+    fn parses_force_and_effect() {
         let options = parse_from([
             "force".into(),
             "--effect=print".into(),
-            "--fade".into(),
-            "1000,200".into(),
         ])
         .unwrap()
         .expect("unexpected help");
         assert!(options.force);
         assert_eq!(options.effect.as_deref(), Some("print"));
-        assert_eq!((options.fade_ms, options.fade_out_ms), (1000, 200));
     }
 }

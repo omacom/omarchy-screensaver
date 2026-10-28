@@ -75,7 +75,6 @@ struct OutputSurface {
     buffer: Option<Buffer>,
     buffer_size: (i32, i32),
     rendered_cells: Vec<Cell>,
-    rendered_alpha: u8,
     rendered_grid: (i32, i32),
     opaque_region: Option<(i32, i32)>,
 }
@@ -102,11 +101,8 @@ struct App {
     animation: Option<Animation>,
     input: String,
     options: Options,
-    started: Instant,
-    dismissing: Option<(Instant, f32)>,
     next_engine_tick: Instant,
     next_present: Instant,
-    last_alpha: u8,
     terminated: Arc<AtomicBool>,
     exit: bool,
     failure: Option<anyhow::Error>,
@@ -152,11 +148,8 @@ pub fn run(input: String, options: Options, terminated: Arc<AtomicBool>) -> Resu
         animation: None,
         input,
         options,
-        started: now,
-        dismissing: None,
         next_engine_tick: now,
         next_present: now,
-        last_alpha: 0,
         terminated,
         exit: false,
         failure: None,
@@ -209,7 +202,6 @@ impl App {
             buffer: None,
             buffer_size: (0, 0),
             rendered_cells: Vec::new(),
-            rendered_alpha: 0,
             rendered_grid: (0, 0),
             opaque_region: None,
         });
@@ -222,33 +214,13 @@ impl App {
     }
 
     fn request_dismiss(&mut self) {
-        if self.dismissing.is_some() {
-            return;
-        }
-        let now = Instant::now();
-        self.dismissing = Some((now, self.opacity(now)));
-        self.next_present = now;
-        for surface in &mut self.surfaces {
-            surface.dirty = true;
-        }
-    }
-
-    fn opacity(&self, now: Instant) -> f32 {
-        if let Some((at, from)) = self.dismissing {
-            let elapsed = now.saturating_duration_since(at).as_millis() as f32;
-            return from * (1.0 - elapsed / self.options.fade_out_ms as f32).clamp(0.0, 1.0);
-        }
-        let elapsed = now.saturating_duration_since(self.started).as_millis() as f32;
-        (elapsed / self.options.fade_ms as f32).clamp(0.0, 1.0)
+        self.exit = true;
     }
 
     fn tick(&mut self, qh: &QueueHandle<Self>) {
         let now = Instant::now();
         if self.terminated.load(Ordering::Relaxed) {
             self.request_dismiss();
-        }
-        if self.dismissing.is_some() && self.opacity(now) <= 0.0 {
-            self.exit = true;
             return;
         }
         if let Err(error) = self.ensure_animation() {
@@ -294,9 +266,7 @@ impl App {
         } else {
             false
         };
-        let alpha = (self.opacity(now) * 255.0).round() as u8;
-        if changed || alpha != self.last_alpha {
-            self.last_alpha = alpha;
+        if changed {
             for surface in &mut self.surfaces {
                 surface.dirty = true;
             }
@@ -333,12 +303,11 @@ impl App {
         match &mut self.animation {
             Some(animation) => animation.resize(cols, rows)?,
             None => {
-                self.animation = Some(Animation::new(
-                    self.input.clone(),
-                    self.options.clone(),
-                    cols,
-                    rows,
-                )?);
+                let mut animation =
+                    Animation::new(self.input.clone(), self.options.clone(), cols, rows)?;
+                // The overlay is opaque from its first commit, so that commit needs the first frame on it.
+                animation.advance()?;
+                self.animation = Some(animation);
             }
         }
         Ok(())
@@ -352,7 +321,6 @@ impl App {
         let Some(animation) = &self.animation else {
             return;
         };
-        let opacity = self.opacity(now);
         let (cells, cols, rows) = (animation.cells(), animation.cols(), animation.rows());
         let mut committed = false;
         for surface in &mut self.surfaces {
@@ -368,7 +336,6 @@ impl App {
                 cells,
                 cols,
                 rows,
-                opacity,
             ) {
                 Ok(did_commit) => committed |= did_commit,
                 Err(error) => {
@@ -394,7 +361,6 @@ fn present_surface(
     cells: &[Cell],
     cols: i32,
     rows: i32,
-    opacity: f32,
 ) -> Result<bool> {
     let width = surface.width * surface.scale;
     let height = surface.height * surface.scale;
@@ -409,9 +375,7 @@ fn present_surface(
         let (buffer, canvas) = pool
             .create_buffer(width, height, stride, wl_shm::Format::Argb8888)
             .context("creating layer buffer")?;
-        let damage = raster_surface(
-            rasterizer, surface, canvas, width, height, cells, cols, rows, opacity,
-        )?;
+        let damage = raster_surface(rasterizer, surface, canvas, width, height, cells, cols, rows)?;
         buffer
             .attach_to(surface.layer.wl_surface())
             .context("attaching layer buffer")?;
@@ -421,9 +385,7 @@ fn present_surface(
         let Some(canvas) = pool.canvas(surface.buffer.as_ref().expect("buffer exists")) else {
             return Ok(false);
         };
-        let damage = raster_surface(
-            rasterizer, surface, canvas, width, height, cells, cols, rows, opacity,
-        )?;
+        let damage = raster_surface(rasterizer, surface, canvas, width, height, cells, cols, rows)?;
         let Some(damage) = damage else {
             surface.dirty = false;
             return Ok(false);
@@ -456,7 +418,7 @@ fn present_surface(
 }
 
 fn update_opaque_region(compositor: &CompositorState, surface: &mut OutputSurface) -> Result<()> {
-    let target = (surface.rendered_alpha == 255).then_some((surface.width, surface.height));
+    let target = Some((surface.width, surface.height));
     if surface.opaque_region == target {
         return Ok(());
     }
@@ -484,12 +446,8 @@ fn raster_surface(
     cells: &[Cell],
     cols: i32,
     rows: i32,
-    opacity: f32,
 ) -> Result<Option<Damage>> {
-    let alpha = (opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
-    let can_update_incrementally = alpha == 255
-        && surface.rendered_alpha == 255
-        && surface.rendered_grid == (cols, rows)
+    let can_update_incrementally = surface.rendered_grid == (cols, rows)
         && surface.rendered_cells.len() == cells.len();
     let damage = if can_update_incrementally {
         rasterizer.render_delta(
@@ -510,7 +468,6 @@ fn raster_surface(
             cells,
             cols,
             rows,
-            opacity,
             surface.scale,
         )?;
         Some(Damage {
@@ -523,7 +480,6 @@ fn raster_surface(
     if damage.is_some() {
         surface.rendered_cells.resize(cells.len(), Cell::default());
         surface.rendered_cells.copy_from_slice(cells);
-        surface.rendered_alpha = alpha;
         surface.rendered_grid = (cols, rows);
     }
     Ok(damage)
@@ -545,6 +501,7 @@ impl CompositorHandler for App {
             output.scale = factor.max(1);
             output.layer.wl_surface().set_buffer_scale(output.scale);
             output.buffer = None;
+            output.rendered_cells.clear();
             output.dirty = true;
         }
         if let Err(error) = self.ensure_animation() {
