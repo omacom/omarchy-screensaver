@@ -61,13 +61,12 @@ impl Rasterizer {
             return index;
         }
         let mut index = self.fonts.iter().position(|font| font.lookup_glyph_index(ch) != 0);
-        if index.is_none() {
-            if let Some(font) = resolve_fallback_font(ch) {
-                if font.lookup_glyph_index(ch) != 0 {
-                    self.fonts.push(font);
-                    index = Some(self.fonts.len() - 1);
-                }
-            }
+        if index.is_none()
+            && let Some(font) = resolve_fallback_font(ch)
+            && font.lookup_glyph_index(ch) != 0
+        {
+            self.fonts.push(font);
+            index = Some(self.fonts.len() - 1);
         }
         let index = index.unwrap_or(0);
         self.font_of.insert(ch, index);
@@ -542,14 +541,31 @@ mod tests {
         if rasterizer.fonts[0].lookup_glyph_index(katakana) != 0 {
             return;
         }
-        let index = rasterizer.font_for(katakana);
-        if index == 0 {
-            eprintln!("fontconfig has no font with half-width katakana; skipping");
+        if !installed_font_has(katakana) {
+            eprintln!("no installed font has half-width katakana; skipping");
             return;
         }
+        let index = rasterizer.font_for(katakana);
+        assert_ne!(index, 0, "an installed font has the character, so it is used");
         assert_ne!(rasterizer.fonts[index].lookup_glyph_index(katakana), 0);
         assert_eq!(rasterizer.font_for('M'), 0, "the monospace font keeps its own glyphs");
         assert_eq!(rasterizer.font_for(katakana), index, "the choice is remembered");
+    }
+
+    /// Whether some installed font really has the character. It asks fc-list, not the
+    /// fc-match path `font_for` takes, so a broken fallback cannot pass as a skip.
+    fn installed_font_has(ch: char) -> bool {
+        let Ok(output) = Command::new("fc-list")
+            .args(["-f", "%{file}\t%{index}\n", &format!(":charset={:x}", ch as u32)])
+            .output()
+        else {
+            return false;
+        };
+        String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+            let (path, index) = line.split_once('\t').unwrap_or((line, "0"));
+            load_font(&PathBuf::from(path), index.trim().parse().unwrap_or(0))
+                .is_ok_and(|font| font.lookup_glyph_index(ch) != 0)
+        })
     }
 
     #[test]
