@@ -21,7 +21,10 @@ pub struct Damage {
 }
 
 pub struct Rasterizer {
-    font: Font,
+    /// The monospace font first; after it, the fonts fontconfig gave for characters it lacks.
+    fonts: Vec<Font>,
+    /// Which of `fonts` draws a character.
+    font_of: HashMap<char, usize>,
     glyphs: HashMap<(char, i32), Glyph>,
     cell_width: i32,
     cell_height: i32,
@@ -31,17 +34,8 @@ pub struct Rasterizer {
 impl Rasterizer {
     pub fn load() -> Result<Self> {
         let path = resolve_monospace_font()?;
-        let data = fs::read(&path)
-            .with_context(|| format!("cannot read monospace font {}", path.display()))?;
-        let font = Font::from_bytes(
-            data,
-            FontSettings {
-                scale: FONT_PX,
-                load_substitutions: false,
-                ..FontSettings::default()
-            },
-        )
-        .map_err(|error| anyhow!("cannot parse monospace font {}: {error}", path.display()))?;
+        let font = load_font(&path, 0)
+            .with_context(|| format!("cannot load monospace font {}", path.display()))?;
         let line = font
             .horizontal_line_metrics(FONT_PX)
             .context("selected font has no horizontal metrics")?;
@@ -49,12 +43,34 @@ impl Rasterizer {
         let cell_height = line.new_line_size.ceil().max(1.0) as i32;
         let ascent = line.ascent.ceil() as i32;
         Ok(Self {
-            font,
+            fonts: vec![font],
+            font_of: HashMap::new(),
             glyphs: HashMap::new(),
             cell_width,
             cell_height,
             ascent,
         })
+    }
+
+    /// The first loaded font that has the character. When none has it, fontconfig names one,
+    /// the way Pango and the terminals fall back, and it is loaded once. The monospace font
+    /// still decides the cell size, so a fallback glyph lands in the same cell. Without this,
+    /// the half-width katakana of matrix came out as the font's missing-glyph box.
+    fn font_for(&mut self, ch: char) -> usize {
+        if let Some(&index) = self.font_of.get(&ch) {
+            return index;
+        }
+        let mut index = self.fonts.iter().position(|font| font.lookup_glyph_index(ch) != 0);
+        if index.is_none()
+            && let Some(font) = resolve_fallback_font(ch)
+            && font.lookup_glyph_index(ch) != 0
+        {
+            self.fonts.push(font);
+            index = Some(self.fonts.len() - 1);
+        }
+        let index = index.unwrap_or(0);
+        self.font_of.insert(ch, index);
+        index
     }
 
     pub fn grid_size(&self, width: i32, height: i32, scale: i32) -> (i32, i32) {
@@ -207,11 +223,13 @@ impl Rasterizer {
                     continue;
                 }
                 let key = (cell.ch, scale);
-                let font = &self.font;
-                let glyph = self.glyphs.entry(key).or_insert_with(|| {
-                    let (metrics, coverage) = font.rasterize(cell.ch, FONT_PX * scale as f32);
-                    Glyph { metrics, coverage }
-                });
+                if !self.glyphs.contains_key(&key) {
+                    let font = self.font_for(cell.ch);
+                    let (metrics, coverage) =
+                        self.fonts[font].rasterize(cell.ch, FONT_PX * scale as f32);
+                    self.glyphs.insert(key, Glyph { metrics, coverage });
+                }
+                let glyph = &self.glyphs[&key];
                 let glyph_x = x + glyph.metrics.xmin;
                 let baseline = y + self.ascent * scale;
                 let glyph_y = baseline - glyph.metrics.ymin - glyph.metrics.height as i32;
@@ -234,6 +252,33 @@ impl Rasterizer {
         }
     }
 }
+fn load_font(path: &PathBuf, collection_index: u32) -> Result<Font> {
+    let data = fs::read(path).with_context(|| format!("cannot read font {}", path.display()))?;
+    Font::from_bytes(
+        data,
+        FontSettings {
+            collection_index,
+            scale: FONT_PX,
+            load_substitutions: false,
+        },
+    )
+    .map_err(|error| anyhow!("cannot parse font {}: {error}", path.display()))
+}
+
+/// The font fontconfig prefers for one character; `None` when fontconfig is not there or
+/// the font cannot be loaded. The caller checks that the font really has the character.
+fn resolve_fallback_font(ch: char) -> Option<Font> {
+    let output = Command::new("fc-match")
+        .args(["-f", "%{file}\n%{index}\n", &format!(":charset={:x}", ch as u32)])
+        .output()
+        .ok()?;
+    let text = String::from_utf8(output.stdout).ok()?;
+    let mut lines = text.lines();
+    let path = PathBuf::from(lines.next()?.trim());
+    let index = lines.next().and_then(|line| line.trim().parse().ok()).unwrap_or(0);
+    load_font(&path, index).ok()
+}
+
 fn resolve_monospace_font() -> Result<PathBuf> {
     let mut candidates = vec![PathBuf::from(
         "/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf",
@@ -485,6 +530,43 @@ fn multiply(color: u8, alpha: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_character_the_monospace_font_lacks_comes_from_another_font() {
+        let Ok(mut rasterizer) = Rasterizer::load() else {
+            eprintln!("no monospace font; skipping");
+            return;
+        };
+        let katakana = 'ｱ';
+        if rasterizer.fonts[0].lookup_glyph_index(katakana) != 0 {
+            return;
+        }
+        if !installed_font_has(katakana) {
+            eprintln!("no installed font has half-width katakana; skipping");
+            return;
+        }
+        let index = rasterizer.font_for(katakana);
+        assert_ne!(index, 0, "an installed font has the character, so it is used");
+        assert_ne!(rasterizer.fonts[index].lookup_glyph_index(katakana), 0);
+        assert_eq!(rasterizer.font_for('M'), 0, "the monospace font keeps its own glyphs");
+        assert_eq!(rasterizer.font_for(katakana), index, "the choice is remembered");
+    }
+
+    /// Whether some installed font really has the character. It asks fc-list, not the
+    /// fc-match path `font_for` takes, so a broken fallback cannot pass as a skip.
+    fn installed_font_has(ch: char) -> bool {
+        let Ok(output) = Command::new("fc-list")
+            .args(["-f", "%{file}\t%{index}\n", &format!(":charset={:x}", ch as u32)])
+            .output()
+        else {
+            return false;
+        };
+        String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+            let (path, index) = line.split_once('\t').unwrap_or((line, "0"));
+            load_font(&PathBuf::from(path), index.trim().parse().unwrap_or(0))
+                .is_ok_and(|font| font.lookup_glyph_index(ch) != 0)
+        })
+    }
 
     #[test]
     fn stacked_full_blocks_leave_no_seam() {
