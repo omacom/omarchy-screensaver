@@ -7,6 +7,7 @@ The [Omarchy](https://omarchy.org) screensaver: a native Wayland overlay on ever
 Omarchy installs it as the `omarchy-screensaver` package, at `/usr/lib/omarchy-screensaver/omarchy-screensaver`, and starts it through `omarchy-launch-screensaver`, both when the session goes idle and from _System > Screensaver_. It:
 
 - draws the text in `~/.config/omarchy/branding/screensaver.txt`, falling back to the bundled `assets/screensaver.txt`
+- picks only from the effects listed under `screensaver.effects` in `~/.config/omarchy/shell.json`, when there are any. The list is a preference: `--effect` and `--include-effects` override it, `--exclude-effects` applies first, names its ttfx doesn't have are skipped, and if no listed effect is left, every effect is in the pick
 - stays off while the `screensaver-off` toggle is set (`omarchy toggle screensaver`), or while the session is locked
 - maps one layer surface per display under the namespace `org.omarchy.screensaver`, which is how Omarchy's tools find it
 - runs one instance at a time, and on Hyprland hides the cursor while it is up and restores it when it exits

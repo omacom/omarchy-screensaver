@@ -123,6 +123,7 @@ fn build_effect(input: &str, options: &Options, cols: i32, rows: i32) -> Result<
         options.effect.as_deref(),
         &options.include_effects,
         &options.exclude_effects,
+        &options.configured_effects,
         &mut rng,
     )?;
     let config = terminal_config(options, cols, rows);
@@ -158,6 +159,7 @@ fn pick_effect(
     requested: Option<&str>,
     include: &[String],
     exclude: &[String],
+    configured: &[String],
     rng: &mut Rng,
 ) -> Result<(String, ttfx::effects::EffectCommand)> {
     let all = effect_names();
@@ -177,10 +179,20 @@ fn pick_effect(
                 }
             }
             let mut names = all;
+            names.retain(|name| !exclude.contains(name));
             if !include.is_empty() {
                 names.retain(|name| include.contains(name));
+            } else {
+                // Configured effects are a preference, and the command line
+                // wins: --exclude-effects has already applied, and names this
+                // ttfx doesn't have are skipped. If no configured effect is
+                // left, the pick stays open rather than leaving no screensaver.
+                let mut preferred = names.clone();
+                preferred.retain(|name| configured.contains(name));
+                if !preferred.is_empty() {
+                    names = preferred;
+                }
             }
-            names.retain(|name| !exclude.contains(name));
             if names.is_empty() {
                 bail!("no effects left after include/exclude");
             }

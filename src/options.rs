@@ -21,6 +21,8 @@ pub struct Options {
     pub seed: Option<u64>,
     pub include_effects: Vec<String>,
     pub exclude_effects: Vec<String>,
+    /// From shell.json; narrows the random pick when --include-effects doesn't.
+    pub configured_effects: Vec<String>,
 }
 
 impl Default for Options {
@@ -43,12 +45,45 @@ impl Default for Options {
             seed: None,
             include_effects: Vec::new(),
             exclude_effects: Vec::new(),
+            configured_effects: Vec::new(),
         }
     }
 }
 
 pub fn parse() -> Result<Option<Options>> {
-    parse_from(env::args().skip(1))
+    let mut parsed = parse_from(env::args().skip(1))?;
+    if let Some(options) = &mut parsed {
+        options.configured_effects = configured_effects();
+    }
+    Ok(parsed)
+}
+
+/// The effects listed under `screensaver.effects` in ~/.config/omarchy/shell.json,
+/// where Omarchy keeps its idle settings. A missing or malformed file, or a
+/// missing key, means no preference.
+fn configured_effects() -> Vec<String> {
+    let Some(home) = env::var_os("HOME") else {
+        return Vec::new();
+    };
+    fs::read_to_string(PathBuf::from(home).join(".config/omarchy/shell.json"))
+        .map(|text| effects_from_shell_json(&text))
+        .unwrap_or_default()
+}
+
+fn effects_from_shell_json(text: &str) -> Vec<String> {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .as_ref()
+        .and_then(|config| config.pointer("/screensaver/effects"))
+        .and_then(serde_json::Value::as_array)
+        .map(|effects| {
+            effects
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Option<Options>> {
@@ -176,6 +211,11 @@ Frames are committed only after content invalidation and compositor readiness.
 
 Input file default: ~/.config/omarchy/branding/screensaver.txt
 then the bundled assets/screensaver.txt.
+
+Effects: the random pick is limited to "screensaver": {{"effects": [...]}} in
+~/.config/omarchy/shell.json when set. --effect and --include-effects
+override it and --exclude-effects applies first; names ttfx doesn't have are
+skipped, and if no listed effect is left, every effect is in the pick.
 "#
     );
 }
@@ -194,5 +234,20 @@ mod tests {
         .expect("unexpected help");
         assert!(options.force);
         assert_eq!(options.effect.as_deref(), Some("print"));
+    }
+
+    #[test]
+    fn reads_effects_from_shell_json() {
+        let effects = effects_from_shell_json(
+            r#"{"idle": {"screensaver": 150}, "screensaver": {"effects": ["print", 3, "wipe"]}}"#,
+        );
+        assert_eq!(effects, ["print", "wipe"]);
+    }
+
+    #[test]
+    fn no_effects_without_a_usable_list() {
+        assert!(effects_from_shell_json(r#"{"idle": {"screensaver": 150}}"#).is_empty());
+        assert!(effects_from_shell_json(r#"{"screensaver": {"effects": "print"}}"#).is_empty());
+        assert!(effects_from_shell_json("{not json").is_empty());
     }
 }
