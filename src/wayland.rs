@@ -43,7 +43,7 @@ use wayland_client::{
 };
 
 use crate::{
-    engine::{Animation, FRAME_RATE},
+    engine::{Animation, FRAME_RATE, present_rate},
     options::Options,
     raster::{Damage, Rasterizer},
     vt::Cell,
@@ -103,6 +103,7 @@ struct App {
     options: Options,
     next_engine_tick: Instant,
     next_present: Instant,
+    present_interval: Duration,
     terminated: Arc<AtomicBool>,
     exit: bool,
     failure: Option<anyhow::Error>,
@@ -150,6 +151,7 @@ pub fn run(input: String, options: Options, terminated: Arc<AtomicBool>) -> Resu
         options,
         next_engine_tick: now,
         next_present: now,
+        present_interval: Duration::from_secs_f64(1.0 / f64::from(present_rate())),
         terminated,
         exit: false,
         failure: None,
@@ -346,7 +348,7 @@ impl App {
             }
         }
         if committed {
-            self.next_present = now + Duration::from_secs_f64(1.0 / FRAME_RATE as f64);
+            self.next_present = now + self.present_interval;
         }
     }
 }

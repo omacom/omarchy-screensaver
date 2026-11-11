@@ -1,3 +1,5 @@
+use std::{fs, path::Path};
+
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{CommandFactory, Parser};
 use ttfx::{
@@ -200,6 +202,30 @@ fn pick_effect(
 /// ttfx steps and the overlay redraws at this rate.
 pub const FRAME_RATE: u32 = 120;
 
+/// On battery the overlay redraws at this rate instead. ttfx keeps stepping at
+/// `FRAME_RATE`, so every effect runs at its usual speed.
+pub const BATTERY_PRESENT_RATE: u32 = 30;
+
+/// The rate the overlay redraws at: slower while a battery is discharging,
+/// because each redraw makes the compositor present the whole screen again.
+pub fn present_rate() -> u32 {
+    if discharging(Path::new("/sys/class/power_supply")) {
+        BATTERY_PRESENT_RATE
+    } else {
+        FRAME_RATE
+    }
+}
+
+fn discharging(power_supplies: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(power_supplies) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        fs::read_to_string(entry.path().join("status"))
+            .is_ok_and(|status| status.trim() == "Discharging")
+    })
+}
+
 fn terminal_config(options: &Options, cols: i32, rows: i32) -> TerminalConfig {
     TerminalConfig {
         frame_rate: i64::from(FRAME_RATE),
@@ -220,5 +246,36 @@ fn terminal_config(options: &Options, cols: i32, rows: i32) -> TerminalConfig {
         anchor_canvas: Anchor::parse(&options.anchor_canvas).unwrap_or(Anchor::C),
         anchor_text: Anchor::parse(&options.anchor_text).unwrap_or(Anchor::C),
         ..TerminalConfig::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn supplies(name: &str, statuses: &[(&str, &str)]) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("screensaver-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        for (supply, status) in statuses {
+            fs::create_dir_all(root.join(supply)).unwrap();
+            fs::write(root.join(supply).join("status"), format!("{status}\n")).unwrap();
+        }
+        fs::create_dir_all(root.join("AC")).unwrap();
+        root
+    }
+
+    #[test]
+    fn a_discharging_battery_slows_the_redraws() {
+        let root = supplies("discharging", &[("BAT0", "Discharging")]);
+        assert!(discharging(&root));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_charging_or_absent_battery_keeps_the_full_rate() {
+        let root = supplies("charging", &[("BAT0", "Charging"), ("BAT1", "Full")]);
+        assert!(!discharging(&root));
+        fs::remove_dir_all(root).unwrap();
+        assert!(!discharging(Path::new("/nonexistent/power_supply")));
     }
 }

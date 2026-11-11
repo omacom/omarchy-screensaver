@@ -8,12 +8,12 @@ The remaining VT parser is intentionally narrow: cursor positioning, erase, line
 
 ## Separate simulation from presentation
 
-The application advances ttfx at a fixed 120 Hz and makes the newest changed frame eligible for presentation at up to 120 Hz.
+The application advances ttfx at a fixed 120 Hz and makes the newest changed frame eligible for presentation at up to 120 Hz, or 30 Hz while a battery is discharging. Almost every tick changes a few cells, and each commit makes the compositor present the whole screen again, so on battery the cost is in how often frames are committed, not in how much they change.
 
 Presentation has three independent gates:
 
 - content actually changed;
-- the 120 Hz deadline passed;
+- the presentation deadline passed (120 Hz, 30 Hz on battery);
 - the compositor sent the previous `wl_surface.frame` callback and released the SHM slot.
 
 This keeps effect timing identical while avoiding redundant rasterization and commits.
