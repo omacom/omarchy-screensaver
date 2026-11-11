@@ -220,9 +220,11 @@ fn discharging(power_supplies: &Path) -> bool {
     let Ok(entries) = fs::read_dir(power_supplies) else {
         return false;
     };
+    // A wireless mouse or keyboard reports its own battery here, with a scope
+    // of Device. Only a battery that powers the machine counts.
     entries.flatten().any(|entry| {
-        fs::read_to_string(entry.path().join("status"))
-            .is_ok_and(|status| status.trim() == "Discharging")
+        let read = |name: &str| fs::read_to_string(entry.path().join(name)).unwrap_or_default();
+        read("status").trim() == "Discharging" && read("scope").trim() != "Device"
     })
 }
 
@@ -277,5 +279,16 @@ mod tests {
         assert!(!discharging(&root));
         fs::remove_dir_all(root).unwrap();
         assert!(!discharging(Path::new("/nonexistent/power_supply")));
+    }
+
+    #[test]
+    fn a_discharging_peripheral_keeps_the_full_rate() {
+        let root = supplies(
+            "peripheral",
+            &[("BAT0", "Charging"), ("hidpp_battery_0", "Discharging")],
+        );
+        fs::write(root.join("hidpp_battery_0").join("scope"), "Device\n").unwrap();
+        assert!(!discharging(&root));
+        fs::remove_dir_all(root).unwrap();
     }
 }
