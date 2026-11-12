@@ -12,6 +12,8 @@ Omarchy installs it as the `omarchy-screensaver` package, at `/usr/lib/omarchy-s
 - runs one instance at a time, and on Hyprland hides the cursor while it is up and restores it when it exits
 - appears and disappears at once, exiting on input, `SIGTERM`, `SIGINT`, `SIGHUP` or `SIGQUIT`
 
+Other presentation targets can follow the current effect through the read-only [D-Bus interface](DBUS.md).
+
 ## Options
 
 ```bash
@@ -33,7 +35,7 @@ Building needs Rust, `pkg-config` and libxkbcommon. Running it needs a composito
 
 ```bash
 make                                  # build/rust/release/omarchy-launch-screensaver
-make check                            # the test suite; needs no compositor
+make check                            # the test suite; needs dbus-run-session, no compositor
 make benchmark                        # render benchmark, checked byte-for-byte against a full redraw
 make install PREFIX="$HOME/.local"    # as $PREFIX/bin/omarchy-launch-screensaver, outside Omarchy's package
 ```

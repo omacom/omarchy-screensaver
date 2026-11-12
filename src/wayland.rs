@@ -44,6 +44,7 @@ use wayland_client::{
 
 use crate::{
     engine::{Animation, FRAME_RATE},
+    observer::Publisher,
     options::Options,
     raster::{Damage, Rasterizer},
     vt::Cell,
@@ -99,6 +100,7 @@ struct App {
     last_pointer: Option<(f64, f64)>,
     rasterizer: Rasterizer,
     animation: Option<Animation>,
+    publisher: Publisher,
     input: String,
     options: Options,
     next_engine_tick: Instant,
@@ -146,6 +148,7 @@ pub fn run(input: String, options: Options, terminated: Arc<AtomicBool>) -> Resu
         last_pointer: None,
         rasterizer: Rasterizer::load()?,
         animation: None,
+        publisher: Publisher::start(),
         input,
         options,
         next_engine_tick: now,
@@ -243,6 +246,9 @@ impl App {
         }
         if catchup == 8 && now >= self.next_engine_tick {
             self.next_engine_tick = now + frame_duration;
+        }
+        if let Some(effect) = self.animation.as_mut().and_then(Animation::take_started_effect) {
+            self.publisher.publish(effect);
         }
         let presentation_ready = now >= self.next_present
             && self
