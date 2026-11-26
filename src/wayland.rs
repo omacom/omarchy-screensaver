@@ -108,7 +108,7 @@ struct App {
     failure: Option<anyhow::Error>,
 }
 
-/// Installed before the cursor is hidden, so a signal at any point still runs the cursor guard.
+/// Installed before the event loop starts so a signal can dismiss the overlay cleanly.
 pub fn termination_flag() -> Result<Arc<AtomicBool>> {
     let terminated = Arc::new(AtomicBool::new(false));
     for signal in [SIGINT, SIGTERM, SIGHUP, SIGQUIT] {
@@ -726,7 +726,7 @@ impl PointerHandler for App {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &wl_pointer::WlPointer,
+        pointer: &wl_pointer::WlPointer,
         events: &[PointerEvent],
     ) {
         for event in events {
@@ -738,7 +738,14 @@ impl PointerHandler for App {
                 continue;
             }
             match event.kind {
-                PointerEventKind::Enter { .. } => self.last_pointer = Some(event.position),
+                PointerEventKind::Enter { serial } => {
+                    // Hide the cursor only while this surface owns pointer focus. When
+                    // the overlay is dismissed or the process dies, the compositor
+                    // can show the next focused client's cursor without stale global
+                    // Hyprland configuration.
+                    pointer.set_cursor(serial, None, 0, 0);
+                    self.last_pointer = Some(event.position);
+                }
                 PointerEventKind::Motion { .. } => {
                     if self
                         .last_pointer
