@@ -96,47 +96,6 @@ pub fn quiet_walker() {
     }
 }
 
-pub struct CursorGuard;
-
-impl CursorGuard {
-    pub fn hide() -> Self {
-        set_cursor(true);
-        Self
-    }
-}
-
-impl Drop for CursorGuard {
-    fn drop(&mut self) {
-        set_cursor(false);
-    }
-}
-
-fn set_cursor(invisible: bool) {
-    if !command_exists("hyprctl") {
-        return;
-    }
-    let expression = format!(
-        "hl.config({{ cursor = {{ invisible = {} }} }})",
-        if invisible { "true" } else { "false" }
-    );
-    let status = Command::new("hyprctl")
-        .args(["eval", &expression])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-    if !status.is_ok_and(|status| status.success()) {
-        let _ = Command::new("hyprctl")
-            .args([
-                "keyword",
-                "cursor:invisible",
-                if invisible { "true" } else { "false" },
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-}
-
 fn command_exists(name: &str) -> bool {
     if name.contains('/') {
         return Path::new(name).is_file();

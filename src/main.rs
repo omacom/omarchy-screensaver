@@ -56,7 +56,6 @@ fn run_overlay(options: Options, input: String) -> Result<i32> {
     }
     launch::quiet_walker();
     let terminated = wayland::termination_flag()?;
-    let _cursor = launch::CursorGuard::hide();
     wayland::run(input, options, terminated).context("screensaver failed")?;
     Ok(0)
 }

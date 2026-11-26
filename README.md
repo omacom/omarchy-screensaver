@@ -9,7 +9,7 @@ Omarchy installs it as the `omarchy-screensaver` package, at `/usr/lib/omarchy-s
 - draws the text in `~/.config/omarchy/branding/screensaver.txt`, falling back to the bundled `assets/screensaver.txt`
 - stays off while the `screensaver-off` toggle is set (`omarchy toggle screensaver`), or while the session is locked
 - maps one layer surface per display under the namespace `org.omarchy.screensaver`, which is how Omarchy's tools find it
-- runs one instance at a time, and on Hyprland hides the cursor while it is up and restores it when it exits
+- runs one instance at a time, and hides the cursor over its Wayland surfaces while it is up
 - appears and disappears at once, exiting on input, `SIGTERM`, `SIGINT`, `SIGHUP` or `SIGQUIT`
 
 ## Options

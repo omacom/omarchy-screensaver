@@ -32,4 +32,4 @@ A stable change bit from the VT parser rejects completely unchanged engine outpu
 
 ## Signals are part of dismissal
 
-SIGINT, SIGTERM, SIGHUP, and SIGQUIT set an atomic dismissal flag. The normal event loop then exits at once, drops Wayland resources, and restores Hyprland cursor visibility. An abrupt default signal handler would bypass the cursor guard.
+SIGINT, SIGTERM, SIGHUP, and SIGQUIT set an atomic dismissal flag. The normal event loop then exits at once and drops Wayland resources. The cursor is hidden through the overlay's pointer focus, so the compositor can restore the next client's cursor when the overlay disappears, including after an abrupt process exit.
