@@ -16,9 +16,38 @@ use crate::{
     vt::{self, Cell},
 };
 
+/// Which ttfx engine runs the effect. ttfx's own CLI runs every effect it
+/// can on the fx engine and falls back to the original one; so does this.
+enum Driver {
+    /// The original engine.
+    Old { ctx: EngineCtx, effect: Box<dyn Effect> },
+    /// The fx engine: faster, and the only home of ttfx's community effects.
+    Fx {
+        engine: Box<ttfx::fx::Engine>,
+        effect: Box<dyn ttfx::fx::run::Effect>,
+        buf: Vec<u8>,
+    },
+}
+
+impl Driver {
+    fn next_frame(&mut self) -> Option<String> {
+        match self {
+            Driver::Old { ctx, effect } => effect.next_frame(ctx),
+            Driver::Fx { engine, effect, buf } => {
+                buf.clear();
+                buf.extend_from_slice(b"\x1b[H");
+                if ttfx::fx::run::step_frame(effect.as_mut(), engine, buf) {
+                    Some(String::from_utf8_lossy(buf).into_owned())
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
 struct RunningEffect {
-    ctx: EngineCtx,
-    effect: Box<dyn Effect>,
+    driver: Driver,
     name: String,
 }
 
@@ -85,13 +114,13 @@ impl Animation {
     }
 
     fn next_frame(&mut self) -> Result<String> {
-        match self.running.effect.next_frame(&mut self.running.ctx) {
+        match self.running.driver.next_frame() {
             Some(frame) => Ok(frame),
             None => {
                 self.running = build_effect(&self.input, &self.options, self.cols, self.rows)?;
                 self.running
-                    .effect
-                    .next_frame(&mut self.running.ctx)
+                    .driver
+                    .next_frame()
                     .ok_or_else(|| anyhow!("ttfx effect '{}' produced no frame", self.running.name))
             }
         }
@@ -127,13 +156,24 @@ fn build_effect(input: &str, options: &Options, cols: i32, rows: i32) -> Result<
     )?;
     let config = terminal_config(options, cols, rows);
     let clock = Clock::virtual_with_frame_rate(config.frame_rate);
+    if let Some(mut effect) = ttfx::fx::effects::build(&command) {
+        let mut engine = Box::new(
+            ttfx::fx::Engine::new(input, config, rng, clock)
+                .map_err(|error| anyhow!("fx Engine::new: {error}"))?,
+        );
+        effect
+            .build(&mut engine)
+            .map_err(|error| anyhow!("effect.build: {error}"))?;
+        let driver = Driver::Fx { engine, effect, buf: Vec::new() };
+        return Ok(RunningEffect { driver, name });
+    }
     let mut ctx = EngineCtx::new(input, config, rng, clock)
         .map_err(|error| anyhow!("EngineCtx::new: {error}"))?;
     let mut effect = command.build_effect();
     effect
         .build(&mut ctx)
         .map_err(|error| anyhow!("effect.build: {error}"))?;
-    Ok(RunningEffect { ctx, effect, name })
+    Ok(RunningEffect { driver: Driver::Old { ctx, effect }, name })
 }
 
 fn effect_names() -> Vec<String> {
