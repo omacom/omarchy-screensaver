@@ -45,6 +45,38 @@ fn seeded_headless_render_has_content() {
 }
 
 #[test]
+fn fx_only_effect_runs_headless() {
+    // snake exists only on ttfx's fx engine; the original engine refuses it.
+    let output = binary()
+        .args([
+            "--headless",
+            "--frames",
+            "120",
+            "--effect",
+            "snake",
+            "--cols",
+            "40",
+            "--rows",
+            "12",
+            "--seed",
+            "1",
+            "--input",
+            "assets/screensaver.txt",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("frames=120 cells=40x12"));
+    assert!(stdout.contains("effect=snake"));
+    assert!(!stdout.contains("non_space=0"));
+}
+
+#[test]
 fn headless_render_survives_closed_standard_streams() {
     let status = binary()
         .args([
